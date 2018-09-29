@@ -48,32 +48,45 @@ class CSP {
   
   conflicts(variables = this.variables) {
     var conflicts = [], i;
-    for (i = 0; i < variables.length; i++)
-      variables[i].conflicts = 0;
-    for (i = 0; i < this.constraints.length; i++) {
-      if (this.constraints[i].conflict(variables)) {
+    for (i = 0; i < this.constraints.length; i++)
+      if (this.constraints[i].conflict(variables))
         conflicts.push(this.constraints[i]);
-        if (this.constraints[i].type === "DifferentConstraint") {
-          variables[this.constraints[i].variableA].conflicts++;
-          variables[this.constraints[i].variableB].conflicts++;
-        }
-      }
-    }
     return conflicts;
   }
   
-  weightedConflicts(variables = this.variables) {
-    var conflicts = this.conflicts(variables), sum = 0, i;
-    for (i = 0; i < conflicts.length; i++) {
-      sum += conflicts[i].weight;
+  weightedConflicts(variables = this.variables, breakWeight = 1e99) {
+    // breakWeight is an optional parameter that stops the summing if the weight ever exceeds its threshold.
+    var sum = 0, i;
+    for (i = 0; i < this.constraints.length; i++) {
+      if (this.constraints[i].conflict(variables)) {
+        sum += this.constraints[i].weight;
+        if (sum > breakWeight)
+       	  break;
+      }
     }
     return sum;
   }
   
-  getConflictingVariables(variables = this.variables, conflictComputation = true) {
-    if (conflictComputation)
-      this.conflicts();
+  markConflictingVariables(variables=this.variables) {
+    // Consider whether checking only DifferentConstraints is enough.
+    for (i = 0; i < variables.length; i++)
+      variables[i].conflicts = 0;
+    var constraint;
+    for (i = 0; i < this.constraints.length; i++) {
+      constraint = this.constraints[i];
+      if (constraint.type === "DifferentConstraint" &&
+	 (variables[constraint.variableA].conflicts === 0 || variables[constraint.variableB].conflicts === 0)) {
+	if (constraint.conflict(variables)) {
+          variables[this.constraints[i].variableA].conflicts++;
+          variables[this.constraints[i].variableB].conflicts++;
+	}
+      }
+    }
+  }
+
+  getConflictingVariables(variables = this.variables) {
     var conflictingVariables = [], i;
+    this.markConflictingVariables();
     for (i = 0; i < variables.length; i++)
       if (variables[i].conflicts > 0)
         conflictingVariables.push(variables[i]);
@@ -83,13 +96,17 @@ class CSP {
   getOptimizedVariable(variable) {
     // Find the option from the variable's domain that minimizes conflicts.
     var minConflict = {"value": variable.value, "conflicts": this.weightedConflicts()}, conflictVariableIndex = this.variables.indexOf(variable), hypotheticalConflicts, i;
+    var hypotheticalVariables = this.getVariables(), temp;
     for (i = 0; i < variable.domain.length; i++) {
       if (variable.domain[i] === variable.value)
         continue;
-      // Change the conflict variable's value to the current test value, and measure conflicts.
-      var hypotheticalVariables = this.getVariables();
+      // Change the conflict variable's value to the current test value, measure conflicts, and reset the value.
+      temp = hypotheticalVariables[conflictVariableIndex].value;
       hypotheticalVariables[conflictVariableIndex].value = variable.domain[i];
-      hypotheticalConflicts = this.weightedConflicts(hypotheticalVariables);
+      // this.weightedConflicts takes a second parameter, breakWeight, and stops summing weights if they
+      // exceed it. In this case, if the weight sum exceeds the lowest so far, terminate the search.
+      hypotheticalConflicts = this.weightedConflicts(hypotheticalVariables, minConflict.conflicts);
+      hypotheticalVariables[conflictVariableIndex].value = temp;
       if (hypotheticalConflicts < minConflict.conflicts)
         minConflict = {"value": variable.domain[i], "conflicts": hypotheticalConflicts};
     }
@@ -112,6 +129,7 @@ class CSP {
   
   minimizeConflicts(maxSteps = 1e3, plateauInterval = 1e2) {
     var conflicts = this.weightedConflicts(), conflictingVariables, conflictVariable, conflictIndex, minConflict, i;
+    var conflictingVariables = this.getConflictingVariables(this.variables);
     for (i = 0; i < maxSteps; i++) {
       // If the current state has no conflicts, return the solution.
       if (conflicts === 0)
@@ -126,7 +144,6 @@ class CSP {
       }
       
       // Find a conflicting variable at random.
-      conflictingVariables = this.getConflictingVariables(this.variables, false);
       conflictVariable = conflictingVariables[Math.floor(Math.random() * conflictingVariables.length)];
       
       // Find the option from the variable's domain that minimizes conflicts.
@@ -166,14 +183,9 @@ class DifferentConstraint extends Constraint {
   conflict_(variables) {
     // Return true if there is a conflict; return false if there is not.
     var variableA = variables[this.variableA],
-        variableB = variables[this.variableB], i;
-    // remove loop, compare bounds of interval (Add to github; learn Git; learn local editors [VIM**********, Sublime text, EMACS])
-    for (i = 0; i < variableA.duration; i++) {
-      // Does variableA extend into variableB? Does variableB extend into variableA?
-      if (variableA.value + i === variableB.value || variableB.value + i === variableA.value)
-        return true;
-    }
-    return false;
+        variableB = variables[this.variableB];
+    return (variableA.value <= variableB.value && variableA.value + variableA.duration > variableB.value) ||
+	   (variableB.value <= variableA.value && variableB.value + variableB.duration > variableA.value);
   }
   
   conflict(variables) {
@@ -186,7 +198,9 @@ class QuantityConstraint extends Constraint {
   
   constructor(student, baseWeight, value, maximum) {
     super(student, baseWeight);
+    // The class time to moniter.
     this.value = value;
+    // The maximum classes during the time.
     this.maximum = maximum;
     this.type = "QuantityConstraint";
   }
@@ -210,8 +224,11 @@ class RepeatConstraint extends Constraint {
   
   constructor(student, baseWeight, names, slots, maximum) {
     super(student, baseWeight);
+    // The names of the class that can't overlap.
     this.names = names;
+    // The slots during which the clases can't overlap.
     this.slots = slots;
+    // The maximum number of overlapped classes during the given range.
     this.maximum = maximum;
     this.type = "RepeatConstraint";
   }
@@ -272,7 +289,7 @@ function setDifferentConstraints(constraints, variables, list) {
   } 
 }
 
-function getBestSchedule(variables, constraints, iterations = 100, minConflictsSteps = 100, additionalSteps = 1000, plateauInterval = 1000) {
+function getBestSchedule(variables, constraints, iterations = 1e2, minConflictsSteps = 1e3, plateauInterval = 1e2) {
   // For iterations random schedules, compute minimizeConflicts for minConflictsSteps steps. Every plateauInterval, check to be sure that the schedule hasn't plateaued (all changes are detrimental except doing nothing). Run minimizeConflicts for additionalSteps steps on the best schedule.
   var bestSchedule = {"schedule": null, conflicts: 1e99}, schedule, conflicts, i;
   for (i = 0; i < iterations; i++) {
@@ -292,7 +309,6 @@ function getBestSchedule(variables, constraints, iterations = 100, minConflictsS
     }
   }
   bestSchedule = new CSP(bestSchedule.variables, constraints);
-  bestSchedule.minimizeConflicts(additionalSteps, plateauInterval);
   return bestSchedule;
 }
 
@@ -300,7 +316,7 @@ function getCleanJSON(schedule, teachers, students) {
   // Create clean JSON: just classes with times and students with classes.
   var cleanJSON = {"classes": [], "teachers": [], "students": []}, variable;
   for (i = 0; i < schedule.variables.length; i++) {
-    variable = bestSchedule.variables[i];
+    variable = schedule.variables[i];
     cleanJSON.classes.push({"name": variable.name, "value": variable.value});
   }
   for (i = 0; i < teachers.length; i++) {
@@ -555,7 +571,7 @@ for (i = 0; i < variables.length; i += variables[i].meetings) {
     names.push(variables[i + j].name);
   for (j = 0; j < 5; j++) {
     slots = [1, 2, 3, 4, 5, 6, 7].map( (slot) => slot + 7*j );
-    constraint = new RepeatConstraint(names, 1e6, variables[i].name, slots, 1);
+    constraint = new RepeatConstraint(variables[i].name, 1e6, names, slots, 1);
     constraints.push(constraint);
   }
 }
@@ -574,7 +590,7 @@ for (i = 0; i < variables.length; i += variables[i].meetings) {
 
 /*
 var start = performance.now();
-var bestSchedule = getBestSchedule(variables, constraints, 10, 10, 0, 100);
+var bestSchedule = getBestSchedule(variables, constraints, 10, 10, 100);
 var end = performance.now();
 console.log("The calculation took " + (end - start)/1000/60 + " minutes.");
 console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts. The weight of the conflicts is " + bestSchedule.weightedConflicts() + ".");
