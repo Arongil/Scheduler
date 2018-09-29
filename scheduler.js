@@ -560,8 +560,6 @@ for (i = 0; i < variables.length; i += variables[i].meetings) {
   }
 }
 
-window.CP.PenTimer.MAX_TIME_IN_LOOP_WO_EXIT = 1e9;
-
 // var schedule = new CSP(variables, constraints);
 // schedule.randomizeVariables();
 // schedule.minimizeConflicts(10000, 100);
@@ -574,6 +572,7 @@ window.CP.PenTimer.MAX_TIME_IN_LOOP_WO_EXIT = 1e9;
 // var end = performance.now();
 // console.log("The calculation took " + (end - start)/iterations + " milliseconds.");
 
+/*
 var start = performance.now();
 var bestSchedule = getBestSchedule(variables, constraints, 10, 10, 0, 100);
 var end = performance.now();
@@ -583,3 +582,4 @@ bestSchedule.printVariables();
 
 var cleanJSON = getCleanJSON(bestSchedule, teachers, students);
 console.log(cleanJSON);
+*/
