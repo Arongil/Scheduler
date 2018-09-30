@@ -137,7 +137,7 @@ class CSP {
       // Every plateauInterval steps, check for a plateau (all changes are detrimental except doing nothing).
       if (i % plateauInterval === 0) {
         if (this.plateaued()) {
-          console.log("Plateau at " + i + "!");
+          // console.log("Plateau at " + i + "!");
           return this.variables;
         }
       }
@@ -163,24 +163,23 @@ class CSP {
 // The parent class for all constraints holds name and weight information.
 class Constraint {
   
-  constructor(name, baseWeight) {
+  constructor(name, weight) {
     this.name = name;
-    this.baseWeight = baseWeight;
-    this.weight = baseWeight;
+    this.weight = weight;
   }
   
 }
 // DifferentConstraint can test for two classes scheduled at the same time.
 class DifferentConstraint extends Constraint {
   
-  constructor(student, baseWeight, variableA, variableB) {
-    super(student, baseWeight);
+  constructor(student, weight, variableA, variableB) {
+    super(student, weight);
     this.variableA = variableA;
     this.variableB = variableB;
     this.type = "DifferentConstraint";
   }
   
-  conflict___(variables) {
+  conflict(variables) {
     // Return true if there is a conflict; return false if there is not.
     var variableA = variables[this.variableA],
         variableB = variables[this.variableB];
@@ -188,16 +187,12 @@ class DifferentConstraint extends Constraint {
 	   (variableB.value <= variableA.value && variableB.value + variableB.duration > variableA.value);
   }
 
-  conflict(variables) {
-    return this.conflict___(variables);
-  }
-  
 }
 // QuantityConstraint can test for too many classes scheduled at the same time.
 class QuantityConstraint extends Constraint {
   
-  constructor(student, baseWeight, value, maximum) {
-    super(student, baseWeight);
+  constructor(student, weight, value, maximum) {
+    super(student, weight);
     // The class time to moniter.
     this.value = value;
     // The maximum classes during the time.
@@ -205,30 +200,27 @@ class QuantityConstraint extends Constraint {
     this.type = "QuantityConstraint";
   }
   
-  conflict__(variables) {
+  conflict(variables) {
     // Return true if there is a conflict; return false if there is not.
     var overlap = 0, i;
-    // Loop through once across all quantity constraints and check none more than max.
+    // Loop through once across all quantity constraints and check that none are more than max.
     for (i = 0; i < variables.length; i++) {
-      if (variables[i].value === this.value)
+      if (variables[i].value === this.value) {
         overlap++;
-      if (overlap > this.maximum)
-        return true;
+        if (overlap > this.maximum)
+          return true;
+      }
     }
     return false;
-  }
-  
-  conflict(variables) {
-    return this.conflict__(variables);
   }
 
 }
 // RepeatConstraint can test for repeated classes in some time frame.
 class RepeatConstraint extends Constraint {
   
-  constructor(student, baseWeight, ids, slots, maximum) {
-    super(student, baseWeight);
-    // The IDs of the classes that can't overlap..
+  constructor(student, weight, ids, slots, maximum) {
+    super(student, weight);
+    // The IDs of the classes that can't overlap.
     this.ids = ids;
     // The slots during which the classes can't overlap in a dictionary.
     this.slots = slots;
@@ -237,21 +229,17 @@ class RepeatConstraint extends Constraint {
     this.type = "RepeatConstraint";
   }
   
-  conflict_(variables) {
+  conflict(variables) {
     // Return true if there is a conflict; return false if there is not.
-    // Try to knock off a level of the loop.
     var overlap = 0, i;
     for (i = 0; i < this.ids.length; i++) {
-      if (!!this.slots[variables[i].value])
+      if (!!this.slots[variables[i].value]) {
         overlap++;
-      if (overlap > this.maximum)
-        return true;
+        if (overlap > this.maximum)
+          return true;
+      }
     }
     return false;
-  }
-
-  conflict(variables) {
-    return this.conflict_(variables);
   }
   
 }
@@ -288,7 +276,6 @@ function setDifferentConstraints(constraints, variables, list) {
           constraints.push(constraint);
         }
         else {
-          constraints[index].baseWeight += weight;
           constraints[index].weight += weight;
         }
       }
@@ -300,15 +287,17 @@ function getBestSchedule(variables, constraints, iterations = 1e2, minConflictsS
   // For iterations random schedules, compute minimizeConflicts for minConflictsSteps steps. Every plateauInterval, check to be sure that the schedule hasn't plateaued (all changes are detrimental except doing nothing). Run minimizeConflicts for additionalSteps steps on the best schedule.
   var bestSchedule = {"schedule": null, conflicts: 1e99}, schedule, conflicts, i;
   for (i = 0; i < iterations; i++) {
-    console.log(Math.floor(i/iterations * 100) + "%");
     schedule = new CSP(variables, constraints);
     schedule.randomizeVariables();
     schedule.minimizeConflicts(minConflictsSteps, plateauInterval);
     conflicts = schedule.weightedConflicts();
-    console.log(conflicts);
+    if (i % Math.floor(iterations/100) == 0) {
+      console.log(Math.floor(i/iterations * 100) + "%");
+      console.log(conflicts);
+    }
     if (conflicts < bestSchedule.conflicts) {
       bestSchedule = {"variables": schedule.getVariables(), "conflicts": conflicts};
-      if (conflicts < 10000) {
+      if (conflicts < 6000) {
         // Add each new best schedule to the localStorage, just in case.
         var cleanJSON = JSON.stringify(schedule.getVariables());
         localStorage.setItem("[" + i + "] Conflicts: " + conflicts + " (" + Math.random().toFixed(8) + ")", cleanJSON);
@@ -597,14 +586,16 @@ for (i = 0; i < variables.length; i += variables[i].meetings) {
 // var end = performance.now();
 // console.log("The calculation took " + (end - start)/iterations + " milliseconds.");
 
-/*
-var start = performance.now();
-var bestSchedule = getBestSchedule(variables, constraints, 10, 10, 100);
-var end = performance.now();
-console.log("The calculation took " + (end - start)/1000/60 + " minutes.");
-console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts. The weight of the conflicts is " + bestSchedule.weightedConflicts() + ".");
-bestSchedule.printVariables();
+function measureBestSchedule(iterations, steps, plateauInterval = 100) {
+  var start = performance.now();
+  var bestSchedule = getBestSchedule(variables, constraints, iterations, steps, plateauInterval);
+  var end = performance.now();
+  console.log("The calculation took " + (end - start)/1000/60 + " minutes.");
+  console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts. The weight of the conflicts is " + bestSchedule.weightedConflicts() + ".");
+  bestSchedule.printVariables();
 
-var cleanJSON = getCleanJSON(bestSchedule, teachers, students);
-console.log(cleanJSON);
-*/
+  // var cleanJSON = getCleanJSON(bestSchedule, teachers, students);
+  // console.log(cleanJSON);
+  
+  return bestSchedule;
+}
