@@ -95,21 +95,21 @@ class CSP {
   
   getOptimizedVariable(variable) {
     // Find the option from the variable's domain that minimizes conflicts.
-    var minConflict = {"value": variable.value, "conflicts": this.weightedConflicts()}, conflictVariableIndex = this.variables.indexOf(variable), hypotheticalConflicts, i;
-    var hypotheticalVariables = this.getVariables(), temp;
+    var minConflict = {"value": variable.value, "conflicts": this.weightedConflicts()}, originalValue = variable.value,
+        conflictVariableIndex = this.variables.indexOf(variable), hypotheticalConflicts, i;
     for (i = 0; i < variable.domain.length; i++) {
       if (variable.domain[i] === variable.value)
         continue;
-      // Change the conflict variable's value to the current test value, measure conflicts, and reset the value.
-      temp = hypotheticalVariables[conflictVariableIndex].value;
-      hypotheticalVariables[conflictVariableIndex].value = variable.domain[i];
+      // Change the conflict variable's value to the current test value and measure conflict.
+      this.variables[conflictVariableIndex].value = variable.domain[i];
       // this.weightedConflicts takes a second parameter, breakWeight, and stops summing weights if they
       // exceed it. In this case, if the weight sum exceeds the lowest so far, terminate the search.
-      hypotheticalConflicts = this.weightedConflicts(hypotheticalVariables, minConflict.conflicts);
-      hypotheticalVariables[conflictVariableIndex].value = temp;
+      hypotheticalConflicts = this.weightedConflicts(this.variables, minConflict.conflicts);
       if (hypotheticalConflicts < minConflict.conflicts)
         minConflict = {"value": variable.domain[i], "conflicts": hypotheticalConflicts};
     }
+    // Reset the value of the optimized variable at the end.
+    this.variables[conflictVariableIndex].value = originalValue;
     return minConflict;
   }
   
@@ -128,8 +128,7 @@ class CSP {
   }
   
   minimizeConflicts(maxSteps = 1e3, plateauInterval = 1e2) {
-    var conflicts = this.weightedConflicts(), conflictingVariables, conflictVariable, conflictIndex, minConflict, i;
-    var conflictingVariables = this.getConflictingVariables(this.variables);
+    var conflicts = this.weightedConflicts(), conflictingVariables, conflictVariable, minConflict, i;
     for (i = 0; i < maxSteps; i++) {
       // If the current state has no conflicts, return the solution.
       if (conflicts === 0)
@@ -138,19 +137,20 @@ class CSP {
       // Every plateauInterval steps, check for a plateau (all changes are detrimental except doing nothing).
       if (i % plateauInterval === 0) {
         if (this.plateaued()) {
-          console.log("Plateau at " + i + "!")
+          console.log("Plateau at " + i + "!");
           return this.variables;
         }
       }
       
       // Find a conflicting variable at random.
+      conflictingVariables = this.getConflictingVariables(this.variables);
       conflictVariable = conflictingVariables[Math.floor(Math.random() * conflictingVariables.length)];
       
       // Find the option from the variable's domain that minimizes conflicts.
       minConflict = this.getOptimizedVariable(conflictVariable);
       
-      // Set the chosen conflicting variable's value to the minimizing one. this.variables.indexOf(conflictVariable) is used because conflictVariable's index within the variables list is different than within the conflictingVariables list.
-      this.variables[this.variables.indexOf(conflictVariable)].value = minConflict.value;
+      // Set the chosen conflicting variable's value to the minimizing one.
+      conflictVariable.value = minConflict.value;
       // Update conflicts.
       conflicts = minConflict.conflicts;
     }
@@ -180,16 +180,16 @@ class DifferentConstraint extends Constraint {
     this.type = "DifferentConstraint";
   }
   
-  conflict_(variables) {
+  conflict___(variables) {
     // Return true if there is a conflict; return false if there is not.
     var variableA = variables[this.variableA],
         variableB = variables[this.variableB];
     return (variableA.value <= variableB.value && variableA.value + variableA.duration > variableB.value) ||
 	   (variableB.value <= variableA.value && variableB.value + variableB.duration > variableA.value);
   }
-  
+
   conflict(variables) {
-    return this.conflict_(variables);
+    return this.conflict___(variables);
   }
   
 }
@@ -205,7 +205,7 @@ class QuantityConstraint extends Constraint {
     this.type = "QuantityConstraint";
   }
   
-  conflict(variables) {
+  conflict__(variables) {
     // Return true if there is a conflict; return false if there is not.
     var overlap = 0, i;
     // Loop through once across all quantity constraints and check none more than max.
@@ -218,33 +218,40 @@ class QuantityConstraint extends Constraint {
     return false;
   }
   
+  conflict(variables) {
+    return this.conflict__(variables);
+  }
+
 }
 // RepeatConstraint can test for repeated classes in some time frame.
 class RepeatConstraint extends Constraint {
   
-  constructor(student, baseWeight, names, slots, maximum) {
+  constructor(student, baseWeight, ids, slots, maximum) {
     super(student, baseWeight);
-    // The names of the class that can't overlap.
-    this.names = names;
-    // The slots during which the clases can't overlap.
+    // The IDs of the classes that can't overlap..
+    this.ids = ids;
+    // The slots during which the classes can't overlap in a dictionary.
     this.slots = slots;
     // The maximum number of overlapped classes during the given range.
     this.maximum = maximum;
     this.type = "RepeatConstraint";
   }
   
-  conflict(variables) {
+  conflict_(variables) {
     // Return true if there is a conflict; return false if there is not.
     // Try to knock off a level of the loop.
     var overlap = 0, i;
-    for (i = 0; i < variables.length; i++) {
-      if (this.names.indexOf(variables[i].name) !== -1 && this.slots.indexOf(variables[i].value) !== -1) {
+    for (i = 0; i < this.ids.length; i++) {
+      if (!!this.slots[variables[i].value])
         overlap++;
-      }
       if (overlap > this.maximum)
         return true;
     }
     return false;
+  }
+
+  conflict(variables) {
+    return this.conflict_(variables);
   }
   
 }
@@ -554,7 +561,7 @@ calibrateClasses(teachers, variables);
 calibrateClasses(students, variables);
 
 // Set constraints.
-var constraints = [], names, slots;
+var constraints = [], ids, slots, slotsDict;
 // Create teachers' DifferentConstraint constraints.
 setDifferentConstraints(constraints, variables, teachers);
 // Create students' DifferentConstraint constraints.
@@ -566,12 +573,14 @@ for (i = 1; i <= 5*7; i++) {
 }
 // Create the RepeatConstraint constraints.
 for (i = 0; i < variables.length; i += variables[i].meetings) {
-  names = [variables[i].name];
+  ids = [i];
   for (j = 1; j < variables[i].meetings; j++)
-    names.push(variables[i + j].name);
+    ids.push(i + j);
   for (j = 0; j < 5; j++) {
+    slotsDict = {};
     slots = [1, 2, 3, 4, 5, 6, 7].map( (slot) => slot + 7*j );
-    constraint = new RepeatConstraint(variables[i].name, 1e6, names, slots, 1);
+    slots.forEach( (slot) => { slotsDict[slot] = true; } );
+    constraint = new RepeatConstraint(variables[i].name, 1e6, ids, slotsDict, 1);
     constraints.push(constraint);
   }
 }
