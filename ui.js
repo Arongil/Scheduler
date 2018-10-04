@@ -1,21 +1,13 @@
-var canvas, ctx;
+var canvases = [];
 var WIDTH, HEIGHT, HALFWIDTH, HALFHEIGHT;
 
-var pi = Math.PI;
-
-var doStroke = true;
-
 var schedule;
-
-var InputFlags = {
-    "click": false,
-    "mouseX": 0,
-    "mouseY": 1e6
-};
 
 class Schedule {
     
     constructor(schedule) {
+        this.days = schedule.days;
+        this.blocks = schedule.blocks;
         this.classes = schedule.classes;
         this.teachers = schedule.teachers;
         this.students = schedule.students;
@@ -42,8 +34,13 @@ class Schedule {
             "art":              ["Saloni"],
             "world language":   ["Raquel", "Sara", "Sabrina"],
             "outer wellness":   ["Devin"]
-
         };
+
+        this.canvas;
+    }
+
+    setCanvas(canvas) {
+        this.canvas = canvas;
     }
 
     getBlock(block) {
@@ -73,18 +70,13 @@ class Schedule {
         throw "Error: invalid classId in Schedule.getColor";
     }
 
-    getPerson(type, name) {
-        var list, i;
-        if (type == "teacher")
-            list = this.teachers;
-        else if (type == "student")
-            list = this.students;
-        else
-            throw "Error: invalid type provided in Schedule.getPerson";
-
-        for (i = 0; i < list.length; i++)
-            if (list[i].name == name)
-                return list[i];
+    getPerson(name) {
+        var lists = [this.teachers, this.students], i, j;
+        for (i = 0; i < lists.length; i++) {
+            for (j = 0; j < lists[i].length; j++)
+                if (lists[i][j].name == name)
+                    return lists[i][j];
+        }
         throw "Error: invalid name provided in Schedule.getPerson";
     }
 
@@ -93,52 +85,92 @@ class Schedule {
         // The default is that the student has goal time.
         // The return is a dictionary with the class name, which may be modified
         // to continued or goal time, and the class id, which is constant.
-        var slot = 7*day + block + 1, classHolder, i, j;
+        var slot = this.blocks*day + block + 1, classes = [], classHolder, i, j;
         for (i = 0; i < person.classes.length; i++) {
             classHolder = this.classes[person.classes[i]];
             if (slot == classHolder.value)
-                return {"name": classHolder.name, "id": person.classes[i]}; 
+                classes.push({"name": classHolder.name, "id": person.classes[i]}); 
             else if (slot > classHolder.value && slot < classHolder.value + classHolder.duration)
-                return {"name": classHolder.name + " [cont]", "id": person.classes[i]};
+                classes.push({"name": classHolder.name + " [cont]", "id": person.classes[i]});
         }
-        return {"name": "Goal Time", "id": person.classes[i]};
+        if (classes.length == 0) {
+            // There are no scheduled classes in the slot, so return goal time.
+            return {"name": "Goal Time", "id": person.classes[i], "conflicts": []};
+        }
+        else if (classes.length == 1) {
+            // Return the one class in the slot.
+            return {"name": classes[0].name, "id": classes[0].id, "conflicts": []};
+        }
+        else {
+            // There's a conflict: return the class with the highest weight and
+            // the others noted as conflicts.
+            var highestWeighted, highestWeight = -1;
+            for (i = 0; i < classes.length; i++) {
+                if (this.classes[classes[i].id].weight > highestWeight) {
+                    highestWeight = this.classes[classes[i].id].weight;
+                    highestWeighted = classes[i].id;
+                }
+            }
+            return {
+                "name": this.classes[highestWeighted].name,
+                "id": highestWeighted,
+                "conflicts": classes
+            };
+        }
+   }
+
+    displayClass(person, day, block) {
+        // Get data of class in given day and block.
+        var classData = this.getClass(person, day - 1, block - 1),
+            color = this.getColor(classData.id);
+        // Draw background rectangle in the color of the class's subject.
+        this.canvas.fill(color[0], color[1], color[2]);
+        this.canvas.rect(WIDTH*(-1/2 + (day + 1)/(this.blocks + 1)),
+            HEIGHT*(-1/3 + 5/6 * block/(this.blocks + 1)),
+            WIDTH/(this.blocks + 1), 5/6 * HEIGHT/(this.blocks + 1));
+        // If there is a conflict, draw a red rectangle at the top of the box.
+        if (classData.conflicts.length > 0) {
+            this.canvas.fill(220, 0, 0);
+            this.canvas.rect(WIDTH*(-1/2 + (day + 1)/(this.blocks + 1)),
+                HEIGHT*(-1/3 + 5/6 * (block - 3/10)/(this.blocks + 1)),
+                0.8 * WIDTH/(this.blocks + 1), 1/6 * HEIGHT/(this.blocks + 1));
+        }
+        this.canvas.fill(0, 0, 0);
+        this.canvas.textWrap(classData.name,
+            WIDTH*(-1/2 + (day + 1)/(this.blocks + 1)),
+            HEIGHT*(-1/3 - 1/90 + 5/6 * block/(this.blocks + 1)),
+            0.9 * WIDTH/(this.blocks + 1), HEIGHT/45);
     }
 
-    display(type, name) {
-        var days = 5, blocks = 7, person = this.getPerson(type, name),
-            classData, color = [0, 0, 0], i, j;
-        fill(200, 200, 200);
-        noStroke();
-        rect(0, 0, WIDTH, HEIGHT);
-        stroke(0, 0, 0);
-        fill(0, 0, 0);
-        textSize(HEIGHT/20);
-        text(name + "'s Schedule", 0, -2/5 * HEIGHT);
-        for (i = 0; i < days + 1; i++) {
-            for (j = 0; j < blocks + 1; j++) {
+    displayBackground() {
+        this.canvas.fill(220, 220, 220);
+        this.canvas.noStroke();
+        this.canvas.rect(0, 0, WIDTH, HEIGHT);
+        this.canvas.stroke(0, 0, 0);
+        this.canvas.fill(0, 0, 0);
+    }
+
+    display(name) {
+        var person = this.getPerson(name), i, j;
+        this.displayBackground();
+        this.canvas.textSize(HEIGHT/20);
+        this.canvas.text(name + "'s Schedule", 0, -2/5 * HEIGHT);
+        for (i = 0; i < this.days + 1; i++) {
+            for (j = 0; j < this.blocks + 1; j++) {
                 if (i == 0 && j == 0)
                     continue;
                 else if (i == 0 && j != 0) {
-                    textSize(HEIGHT / 60);
-                    text(this.getBlock(j - 1), WIDTH*(-1/2 + 1/(blocks + 1)),
-                        HEIGHT*(-1/3 + 5/6 * j/(blocks + 1))); 
+                    this.canvas.textSize(HEIGHT / 40);
+                    this.canvas.text(this.getBlock(j - 1), WIDTH*(-1/2 + 0.8/(this.blocks + 1)),
+                        HEIGHT*(-1/3 + 5/6 * (j + 0.1)/(this.blocks + 1))); 
                 }
                 else if (j == 0 && i != 0) {
-                    textSize(HEIGHT / 40);
-                    text(this.getDay(i - 1), WIDTH*(-1/2 + (i + 1)/(blocks + 1)),
-                        HEIGHT*(-3/10 - 1/(6 * (blocks + 1))));
+                    this.canvas.textSize(HEIGHT / 30);
+                    this.canvas.text(this.getDay(i - 1), WIDTH*(-1/2 + (i + 1)/(this.blocks + 1)),
+                        HEIGHT*(-11/40 - 1/(6 * (this.blocks + 1))));
                 }
                 else {
-                    classData = this.getClass(person, i - 1, j - 1);
-                    color = this.getColor(classData.id);
-                    fill(color[0], color[1], color[2]);
-                    rect(WIDTH*(-1/2 + (i + 1)/(blocks + 1)),
-                        HEIGHT*(-1/3 + 5/6 * j/(blocks + 1)),
-                        WIDTH/(blocks + 1), 5/6 * HEIGHT/(blocks + 1));
-                    fill(0, 0, 0);
-                    textWrap(classData.name, WIDTH*(-1/2 + (i + 1)/(blocks + 1)),
-                        HEIGHT*(-1/3 + 5/6 * j/(blocks + 1) - 0.1/(blocks + 1)),
-                        WIDTH/(blocks + 1), HEIGHT/50);
+                    this.displayClass(person, i, j);
                 }
             }
         }
@@ -146,138 +178,21 @@ class Schedule {
 
 }
 
-// New context fuctions here.
-function fill(red, green, blue, alpha) {
-  if (alpha === undefined) {
-    alpha = 1;
-  }
-  ctx.fillStyle = "rgba("+Math.floor(red)+","+Math.floor(green)+","+Math.floor(blue)+","+alpha+")";
-}
-function noStroke() {
-  doStroke = false;
-}
-function stroke(red, green, blue) {
-  ctx.strokeStyle = "rgb("+Math.floor(red)+","+Math.floor(green)+","+Math.floor(blue)+")";
-  doStroke = true;
-}
-function strokeWeight(weight) {
-  ctx.lineWidth = weight;
-  doStroke = true;
-}
-function rect(x, y, width, height) {
-  ctx.beginPath();
-  ctx.rect(x - width/2, y - height/2, width, height);
-  ctx.closePath();
-  ctx.fill();
-  if (doStroke) {
-    ctx.stroke();
-  }
-}
-function ellipse(x, y, xRadius, yRadius) {
-  ctx.beginPath();
-  ctx.ellipse(x, y, xRadius, yRadius, 0, 0, 2*pi);
-  ctx.closePath();
-  ctx.fill();
-  if (doStroke) {
-    ctx.stroke();
-  }
-}
-function line(x1, y1, x2, y2) {
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.closePath();
-  ctx.stroke();
-}
-function textSize(size) {
-  ctx.font = size + "px Arial";
-}
-function text(str, x, y, alignment) {
-  if (alignment === undefined) {
-    alignment = "center";
-  }
-  ctx.textAlign = alignment;
-  ctx.fillText(str, x, y);
-}
-function textWrap(str, x, y, width, fontSize) {
-  // Idea adapted from https://codepen.io/ashblue/pen/fGkma?editors=0010
-  
-  var lines = [],
-      line = "",
-      lineTest = "",
-      words = str.split(" "),
-      currentY = y;
-  
-  textSize(fontSize);
-  
-  for (var i = 0, len = words.length; i < len; i++) {
-    lineTest = line + words[i] + " ";
-    
-    if (ctx.measureText(lineTest).width < width) {
-      line = lineTest;
-    }
-    else {
-      currentY += fontSize;
-      
-      lines.push({"text": line, "currentY": currentY});
-      line = words[i] + " ";
-    }
-  }
-  
-  // Catch last line in-case something is left over
-  if (line.length > 0) {
-    currentY += fontSize;
-    lines.push({ "text": line.trim(), "currentY": currentY });
-  }
-  
-  for (var i = 0, len = lines.length; i < len; i++) {
-    text(lines[i]["text"], x, lines[i]["currentY"]);
-  }
-}
-
 function resize() {
-  ctx.translate(-HALFWIDTH, -HALFHEIGHT);
-  
-  canvas.width = 4/5 * window.innerWidth;
-  canvas.height = canvas.width;
-  if (canvas.height > 7/8 * window.innerHeight) {
-    // If the height is greater than the height of the screen, set it accordingly.
-    canvas.height = 7/8 * window.innerHeight;
-    canvas.width = canvas.height;
-  }
-  
-  WIDTH = canvas.width;
-  HEIGHT = canvas.height;
-  HALFWIDTH = WIDTH / 2;
-  HALFHEIGHT = HEIGHT / 2;
-  
-  ctx.translate(HALFWIDTH, HALFHEIGHT);
+    canvases.forEach( (canvas) => canvas.resize() );
 }
+document.getElementsByTagName("body")[0].onresize = resize;
 
-function init() {
-    canvas = document.getElementById("canvas");
-    ctx = canvas.getContext("2d");
-
-    var body = document.getElementsByTagName("body")[0];
-    body.onresize = resize;
-    resize();
-
-    canvas.onmouseup = function(e) {
-        InputFlags["click"] = true;
-    };
-    document.onmousemove = function(e) {
-        var x = e.clientX - window.innerWidth/2;
-
-        var canvas = document.getElementById("canvas"); 
-        var offset = canvas.getBoundingClientRect().top + window.scrollY;
-        var y = e.clientY - HALFHEIGHT + offset;
-        InputFlags["mouseX"] = x;
-        InputFlags["mouseY"] = y;
-    };
+function clearOptions(select) {
+    for (var i = select.options.length - 1; i >= 0; i--) {
+        select.remove(i);
+    }
 }
 
 function loadLevelSelector() {
     var levelSelect = document.getElementById("level-select"), levels = ["teachers"];
+    document.getElementById("ui-level-1").style.display = "block";
+    clearOptions(levelSelect);
     schedule.students.forEach( (student) => {
         if (levels.indexOf(student.grade) == -1)
             levels.push(student.grade);
@@ -289,14 +204,9 @@ function loadLevelSelector() {
     });
 }
 
-function clearOptions(select) {
-    for (var i = select.options.length - 1; i >= 0; i--) {
-        select.remove(i);
-    }
-}
-
-function loadLevels() {
-    var level = document.getElementById("level-select").value, members = [];
+function loadLevels_(level, clear = true) {
+    document.getElementById("ui-level-2").style.display = "block";
+    var members = [];
     if (level == "teachers") {
         schedule.teachers.forEach( (teacher) => members.push(teacher.name) );
     }
@@ -307,10 +217,11 @@ function loadLevels() {
                 members.push(student.name);
         });
     }
+    members = members.sort();
     
     var personSelect = document.getElementById("person-select");
-    personSelect.level = level;
-    clearOptions(personSelect);
+    if (clear)
+        clearOptions(personSelect);
     members.forEach( (member) => {
         var option = document.createElement("option");
         option.textContent = member;
@@ -318,18 +229,51 @@ function loadLevels() {
     });
 }
 
+function loadLevels() {
+    var level = document.getElementById("level-select").value;
+    loadLevels_(level);
+}
+
+function loadAllLevels() {
+    var levelSelector = document.getElementById("level-select"),
+        options = levelSelector.options, i;
+    clearOptions(document.getElementById("person-select"));
+    for (i = 0; i < options.length; i++) {
+        loadLevels_(options[i].textContent, false);
+    }
+}
+
 function loadSchedule() {
-    var personSelect = document.getElementById("person-select"), type;
-    if (personSelect.level == "teachers")
-        type = "teacher";
-    else
-        type = "student";
-    schedule.display(type, personSelect.value);
+    // When loading a single schedule, clear out the canvases div,
+    // replace in it one new canvas, and call schedule.display on it.
+    var personSelect = document.getElementById("person-select"),
+        canvasElements = document.getElementById("canvases");
+    while (canvasElements.firstChild)
+        canvasElements.removeChild(canvasElements.firstChild);
+    var canvas = new Canvas("canvas0");
+    canvas.resize();
+    schedule.setCanvas(canvas);
+    schedule.display(personSelect.value);
+}
+
+function loadAllSchedules() {
+    // When loading multiple schedules, clear out the canvases div, replace
+    // in it multiple canvases, and call schedule.display on all of them.
+    var personSelect = document.getElementById("person-select"),
+        canvasElements = document.getElementById("canvases"), canvas, br, i;
+    while (canvasElements.firstChild)
+        canvasElements.removeChild(canvasElements.firstChild);
+    for (i = 0; i < personSelect.options.length; i++) {
+        br = document.createElement("br");
+        document.getElementById("canvases").appendChild(br);
+        canvas = new Canvas("canvas" + i);
+        canvas.resize();
+        schedule.setCanvas(canvas);
+        schedule.display(personSelect.options[i].textContent);
+    }
 }
 
 function loadJSON() {
-    init();
-
     try {
         var parsed = JSON.parse(document.getElementById("schedule-json").value);
     }

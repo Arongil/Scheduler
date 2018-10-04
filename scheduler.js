@@ -312,14 +312,21 @@ function getBestSchedule(variables, constraints, iterations = 1e2, minConflictsS
 }
 
 function getCleanJSON(schedule, teachers, students) {
-  // Create clean JSON: just classes with times and students with classes.
-  var cleanJSON = {"classes": [], "teachers": [], "students": []}, variable;
+  // Create clean JSON
+  var cleanJSON = {
+      "days": days,
+      "blocks": blocks,
+      "classes": [],
+      "teachers": [],
+      "students": []
+  }, variable;
   for (i = 0; i < schedule.variables.length; i++) {
     variable = schedule.variables[i];
     cleanJSON.classes.push({
         "name": variable.name,
         "value": variable.value,
-        "duration": variable.duration
+        "duration": variable.duration,
+        "weight": variable.weight
     });
   }
   for (i = 0; i < teachers.length; i++) {
@@ -338,6 +345,10 @@ function getCleanJSON(schedule, teachers, students) {
   return JSON.stringify(cleanJSON);
 }
 
+// There are five schooldays in a week, each with seven blocks.
+var days = 5, blocks = 7;
+// Cutoffs are slots (mod blocks) in which polyblock classes cannot intersect: break, lunch, and the end of the day.
+var cutoffs = [2, 4, 0];
 // Initialize variables. Duration denotes how many blocks a class lasts; meetings denotes how many times per week a class meets. Classes with multiple meetings per week are duplicated and assigned the original class's number plus a decimal. Flooring returns the original values number. (class 14.9 => 14)
 var variablesDictionary = {
   "0": {"name": "IL5 Studio",     "weight": 1e3, "duration": 3, "meetings": 2},
@@ -421,17 +432,16 @@ function getArrayedVariables(variableDictionary, idIncrement) {
 }
 function expandDomains(variables) {
   var slots = [], slot, i, j, k;
-  for (i = 1; i <= 5*7; i++) {
+  for (i = 1; i <= days*blocks; i++) {
     slots.push(i);
-  }
-  // Cutoffs are slots (mod 7) in which polyblock classes cannot intersect: break, lunch, and the end of the day.
-  var cutoffs = [2, 4, 0], possible;
+  } 
+  var possible;
   for (i = 0; i < variables.length; i++) {
     for (j = 0; j < slots.length; j++) {
       slot = slots[j];
       possible = true;
       for (k = 0; k < variables[i].duration - 1; k++) {
-        if (cutoffs.indexOf((slot + k) % 7) !== -1) {
+        if (cutoffs.indexOf((slot + k) % blocks) !== -1) {
           // If there is an intersection, the slot cannot be used.
           possible = false;
           break;
@@ -478,7 +488,7 @@ var students = [
   {"name": "Jasper Johnson", "weight": 1, "grade": "IL5", "classes": [0, 12, 38, 4, 45, 21, 17, 27]},
   {"name": "Megan Chien", "weight": 1, "grade": "IL5", "classes": [0, 12, 23, 4, 16, 37, 47, 50, 29]},
   {"name": "Soren Williams", "weight": 1, "grade": "IL5", "classes": [0, 18, 3, 38, 30, 21, 11, 47, 50]},
-  {"name": "Bharat Saiju", "weight": 1, "grade": "IL5", "classes": [0, 19, 9, 25, 20, 37, 47, 32, 51]},
+  {"name": "Bharat Saiju", "weight": 1, "grade": "IL5", "classes": [0, 19, 9, 25, 15, 37, 47, 32, 51]},
   {"name": "Mary Beeler", "weight": 1, "grade": "IL5", "classes": [0, 18, 38, 5, 22, 11, 47, 51, 31]},
   {"name": "JANE BEELER", "weight": 1, "grade": "IL6", "classes": [1, 24, 14, 9, 45, 20, 46, 40, 29]},
   {"name": "DILAN KUDVA", "weight": 1, "grade": "IL6", "classes": [1, 24, 19, 9, 15, 41, 47, 50, 31]},
@@ -570,7 +580,7 @@ setDifferentConstraints(constraints, variables, teachers);
 // Create students' DifferentConstraint constraints.
  setDifferentConstraints(constraints, variables, students);
 // Create the QuantityConstraint constraints.
-for (i = 1; i <= 5*7; i++) {
+for (i = 1; i <= days*blocks; i++) {
   constraint = new QuantityConstraint("Slot " + i, 1e6, i, 6);
   constraints.push(constraint);
 }
@@ -579,9 +589,9 @@ for (i = 0; i < variables.length; i += variables[i].meetings) {
   ids = [i];
   for (j = 1; j < variables[i].meetings; j++)
     ids.push(i + j);
-  for (j = 0; j < 5; j++) {
+  for (j = 0; j < days; j++) {
     slotsDict = {};
-    slots = [1, 2, 3, 4, 5, 6, 7].map( (slot) => slot + 7*j );
+    slots = (Array(blocks)).fill(0).map( (block, index) => index + 1 + blocks*j );
     slots.forEach( (slot) => { slotsDict[slot] = true; } );
     constraint = new RepeatConstraint(variables[i].name, 1e6, ids, slotsDict, 1);
     constraints.push(constraint);
