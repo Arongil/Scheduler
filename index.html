@@ -2,20 +2,33 @@
 <html> 
   <head> 
     <title>Scheduler</title> 
+
+    <link href="style.css" rel="stylesheet" type="text/css" />
   </head>
   <body>
-    <h1 style="margin: auto; text-align: center;"> Server Working </h1>
+    <h1 class="center"> Server Working </h1>
    
-    <div id="quick-buttons" style="margin: auto; padding: 10%; text-align: center;">
-      <button onclick="var s = measureBestSchedule(10, 10);">Compute bestSchedule for 10 iterations with 10 minimizeConflicts steps.</button>
-      <button onclick="var s = measureBestSchedule(10, 100);">Compute bestSchedule for 10 iterations with 100 minimizeConflicts steps.</button>
-      <button onclick="var s = measureBestSchedule(10, 1000);">Compute bestSchedule for 10 iterations with 1000 minimizeConflicts steps.</button>
-      <button onclick="var s = measureBestSchedule(10, 10000);">Compute bestSchedule for 10 iterations with 10000 minimizeConflicts steps.</button>
-      <button onclick="var s = measureBestSchedule(100, 10000);">Compute bestSchedule for 100 iterations with 10000 minimizeConflicts steps.</button>
-      <button onclick="var s = measureBestSchedule(1000, 10000);">Compute bestSchedule for 1000 iterations with 10000 minimizeConflicts steps.</button>
+    <div class="center" id="quick-buttons" style="padding: 5%"> 
+        <button onclick="var s = measureBestSchedule(10, 10);">Compute bestSchedule for 10 iterations with 10 minimizeConflicts steps.</button><br>
+      <button onclick="var s = measureBestSchedule(10, 100);">Compute bestSchedule for 10 iterations with 100 minimizeConflicts steps.</button><br>
+      <button onclick="var s = measureBestSchedule(10, 1000);">Compute bestSchedule for 10 iterations with 1000 minimizeConflicts steps.</button><br>
+      <button onclick="var s = measureBestSchedule(10, 10000);">Compute bestSchedule for 10 iterations with 10000 minimizeConflicts steps.</button><br>
+      <button onclick="var s = measureBestSchedule(100, 10000);">Compute bestSchedule for 100 iterations with 10000 minimizeConflicts steps.</button><br>
+      <button onclick="var s = measureBestSchedule(1000, 10000);">Compute bestSchedule for 1000 iterations with 10000 minimizeConflicts steps.</button><br>
       <button onclick="var s = measureBestSchedule(10000, 10000);">Compute bestSchedule for 10000 iterations with 10000 minimizeConflicts steps.</button>
     </div>
 
     <script src="scheduler.js"></script>
+    <script src="ui.js"></script>
+
+    <div id="user-interface" class="center" style="padding: 5%"> 
+        <textarea id="schedule-json" rows=4 cols=80 placeholder="JSON text here"></textarea><br><br> 
+        <button id="load-json" onclick="loadJSON(document.getElementById('schedule-json').value);">Load</button><br><br>
+        <select id="student-select"></select>
+        <select id="student-select"></select>
+        <button id="master-schedule">Master Schedule</button>
+    </div>
+
+    <canvas id="canvas" class="center"></canvas>
   </body>
 </html>

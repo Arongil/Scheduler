@@ -75,11 +75,11 @@ class CSP {
     for (i = 0; i < this.constraints.length; i++) {
       constraint = this.constraints[i];
       if (constraint.type === "DifferentConstraint" &&
-	 (variables[constraint.variableA].conflicts === 0 || variables[constraint.variableB].conflicts === 0)) {
-	if (constraint.conflict(variables)) {
+         (variables[constraint.variableA].conflicts === 0 || variables[constraint.variableB].conflicts === 0)) {
+        if (constraint.conflict(variables)) {
           variables[this.constraints[i].variableA].conflicts++;
           variables[this.constraints[i].variableB].conflicts++;
-	}
+        }
       }
     }
   }
@@ -184,7 +184,7 @@ class DifferentConstraint extends Constraint {
     var variableA = variables[this.variableA],
         variableB = variables[this.variableB];
     return (variableA.value <= variableB.value && variableA.value + variableA.duration > variableB.value) ||
-	   (variableB.value <= variableA.value && variableB.value + variableB.duration > variableA.value);
+           (variableB.value <= variableA.value && variableB.value + variableB.duration > variableA.value);
   }
 
 }
@@ -229,11 +229,11 @@ class RepeatConstraint extends Constraint {
     this.type = "RepeatConstraint";
   }
   
-  conflict(variables) {
+  conflict_(variables) {
     // Return true if there is a conflict; return false if there is not.
     var overlap = 0, i;
     for (i = 0; i < this.ids.length; i++) {
-      if (!!this.slots[variables[i].value]) {
+      if (!!this.slots[variables[this.ids[i]].value]) {
         overlap++;
         if (overlap > this.maximum)
           return true;
@@ -242,6 +242,9 @@ class RepeatConstraint extends Constraint {
     return false;
   }
   
+  conflict(variables) {
+    return this.conflict_(variables);  
+  }
 }
 
 function constraintIndex(constraints, constraint) {
@@ -313,7 +316,7 @@ function getCleanJSON(schedule, teachers, students) {
   var cleanJSON = {"classes": [], "teachers": [], "students": []}, variable;
   for (i = 0; i < schedule.variables.length; i++) {
     variable = schedule.variables[i];
-    cleanJSON.classes.push({"name": variable.name, "value": variable.value});
+    cleanJSON.classes.push({"name": variable.name, "value": variable.value, "duration": variable.duration});
   }
   for (i = 0; i < teachers.length; i++) {
     cleanJSON.teachers.push({"name": teachers[i].name, "classes": teachers[i].classes});
@@ -554,7 +557,7 @@ var constraints = [], ids, slots, slotsDict;
 // Create teachers' DifferentConstraint constraints.
 setDifferentConstraints(constraints, variables, teachers);
 // Create students' DifferentConstraint constraints.
-setDifferentConstraints(constraints, variables, students);
+ setDifferentConstraints(constraints, variables, students);
 // Create the QuantityConstraint constraints.
 for (i = 1; i <= 5*7; i++) {
   constraint = new QuantityConstraint("Slot " + i, 1e6, i, 6);
@@ -591,8 +594,9 @@ function measureBestSchedule(iterations, steps, plateauInterval = 100) {
   var bestSchedule = getBestSchedule(variables, constraints, iterations, steps, plateauInterval);
   var end = performance.now();
   console.log("The calculation took " + (end - start)/1000/60 + " minutes.");
-  console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts. The weight of the conflicts is " + bestSchedule.weightedConflicts() + ".");
+  console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts weighted at " + bestSchedule.weightedConflicts() + ".");
   bestSchedule.printVariables();
+  console.log(getCleanJSON(bestSchedule, teachers, students)); 
 
   // var cleanJSON = getCleanJSON(bestSchedule, teachers, students);
   // console.log(cleanJSON);
