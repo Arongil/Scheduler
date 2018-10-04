@@ -9,7 +9,7 @@
     <h1 class="center"> Server Working </h1>
    
     <div class="center" id="quick-buttons" style="padding: 5%"> 
-        <button onclick="var s = measureBestSchedule(10, 10);">Compute bestSchedule for 10 iterations with 10 minimizeConflicts steps.</button><br>
+      <button onclick="var s = measureBestSchedule(10, 10);">Compute bestSchedule for 10 iterations with 10 minimizeConflicts steps.</button><br>
       <button onclick="var s = measureBestSchedule(10, 100);">Compute bestSchedule for 10 iterations with 100 minimizeConflicts steps.</button><br>
       <button onclick="var s = measureBestSchedule(10, 1000);">Compute bestSchedule for 10 iterations with 1000 minimizeConflicts steps.</button><br>
       <button onclick="var s = measureBestSchedule(10, 10000);">Compute bestSchedule for 10 iterations with 10000 minimizeConflicts steps.</button><br>
@@ -23,10 +23,11 @@
 
     <div id="user-interface" class="center" style="padding: 5%"> 
         <textarea id="schedule-json" rows=4 cols=80 placeholder="JSON text here"></textarea><br><br> 
-        <button id="load-json" onclick="loadJSON(document.getElementById('schedule-json').value);">Load</button><br><br>
-        <select id="student-select"></select>
-        <select id="student-select"></select>
-        <button id="master-schedule">Master Schedule</button>
+        <button id="load-json" onclick="loadJSON();">Load JSON</button><br><br>
+        <select id="level-select"></select>
+        <button id="load-levels" onclick="loadLevels();">Load Levels</button><br>
+        <select id="person-select"></select>
+        <button id="load-schedule" onclick="loadSchedule();">Load Schedule</button>
     </div>
 
     <canvas id="canvas" class="center"></canvas>

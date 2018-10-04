@@ -112,6 +112,8 @@ class Schedule {
         rect(0, 0, WIDTH, HEIGHT);
         stroke(0, 0, 0);
         fill(0, 0, 0);
+        textSize(HEIGHT/20);
+        text(name + "'s Schedule", 0, -2/5 * HEIGHT);
         for (i = 0; i < days + 1; i++) {
             for (j = 0; j < blocks + 1; j++) {
                 if (i == 0 && j == 0)
@@ -274,11 +276,62 @@ function init() {
     };
 }
 
-function loadJSON(json) {
+function loadLevelSelector() {
+    var levelSelect = document.getElementById("level-select"), levels = ["teachers"];
+    schedule.students.forEach( (student) => {
+        if (levels.indexOf(student.grade) == -1)
+            levels.push(student.grade);
+    });
+    levels.forEach( (level) => {
+        var option = document.createElement("option");
+        option.textContent = level;
+        levelSelect.appendChild(option);
+    });
+}
+
+function clearOptions(select) {
+    for (var i = select.options.length - 1; i >= 0; i--) {
+        select.remove(i);
+    }
+}
+
+function loadLevels() {
+    var level = document.getElementById("level-select").value, members = [];
+    if (level == "teachers") {
+        schedule.teachers.forEach( (teacher) => members.push(teacher.name) );
+    }
+    else {
+        // Decypher the grade (IL).
+        schedule.students.forEach( (student) => {
+            if (student.grade == level)
+                members.push(student.name);
+        });
+    }
+    
+    var personSelect = document.getElementById("person-select");
+    personSelect.level = level;
+    clearOptions(personSelect);
+    members.forEach( (member) => {
+        var option = document.createElement("option");
+        option.textContent = member;
+        personSelect.appendChild(option);
+    });
+}
+
+function loadSchedule() {
+    var personSelect = document.getElementById("person-select"), type;
+    if (personSelect.level == "teachers")
+        type = "teacher";
+    else
+        type = "student";
+    schedule.display(type, personSelect.value);
+}
+
+function loadJSON() {
     init();
 
     try {
-        var parsed = JSON.parse(json);
+        var parsed = JSON.parse(document.getElementById("schedule-json").value);
     }
     catch {
         throw "Error: invalid JSON";
@@ -286,5 +339,5 @@ function loadJSON(json) {
     }
 
     schedule = new Schedule(parsed); 
-    schedule.display("student", "LAKER NEWHOUSE");
+    loadLevelSelector();
 }
