@@ -112,7 +112,7 @@ class CSP {
   }
  
   weightedConflicts(variables = this.variables, constraints = this.constraints,
-                    breakWeight = 1e99, recordConflicts = true) {
+                    breakWeight = 1e99) {
     // breakWeight is an optional parameter that stops the summing if the weight
     // ever exceeds its threshold.
     // constraints is an optional parameter that focuses weightedConflicts to
@@ -121,10 +121,6 @@ class CSP {
     for (i = 0; i < constraints.length; i++) {
       if (constraints[i].conflict(variables)) {
         sum += constraints[i].weight;
-        // If desired, violated constraints can be incremented in an ordering
-        // weight so that often-broken constraints can be evaluated first.
-        if (recordConflicts)
-          constraints[i].orderingWeight++;
         if (sum > breakWeight)
        	  break;
       }
@@ -158,6 +154,30 @@ class CSP {
     return conflictingVariables;
   }
 
+  getPrunedAssociated(variable) {
+      // Assuming only the one passed variable will change, which constraints
+      // are still necessary to consider? For example, a QuantityConstraint
+      // with only three classes of six cannot be overflowed, even if the
+      // passed variable is put in its slot: it should not be included.
+      var necessaryConstraints = [],
+          associated = this.constraintsByVariable[variable].associated, i;
+      for (i = 0; i < associated.length; i++) {
+          if (associated[i].type === "QuantityConstraint") {
+              // If a QuantityConstraint has fewer overlaps than its maximum,
+              // then it doesn't matter where the variable is placed: the
+              // QuantityConstraint will still not exceed its limit.
+              if (associated[i].getOverlap(this.variables) >= associated[i].maximum)
+                  necessaryConstraints.push(associated[i]);
+          }
+          else {
+              // There's no good way to ensure that a DifferentConstraint or
+              // a RepeatConstraint is unnecessary, so include them all.
+              necessaryConstraints.push(associated[i]);
+          }
+      }
+      return necessaryConstraints;
+  }
+  
   getOptimizedVariable(variable) {
     // Find the option from the variable's domain that minimizes conflicts.
     // baseWeight is the summed weights of all constraints unrelated to the
@@ -166,10 +186,11 @@ class CSP {
     var variableIndex = this.variables.indexOf(variable),
         baseWeight = this.weightedConflicts(this.variables,
             this.constraintsByVariable[variableIndex].unassociated),
+        prunedAssociated = this.getPrunedAssociated(variableIndex),
         minConflict = {
             "value": variable.value,
             "conflicts": baseWeight + this.weightedConflicts(this.variables,
-                this.constraintsByVariable[variableIndex].associated)
+                prunedAssociated)
         }, originalValue = variable.value, hypotheticalConflicts, i;
     for (i = 0; i < variable.domain.length; i++) {
       if (variable.domain[i] === variable.value)
@@ -180,8 +201,7 @@ class CSP {
       // summing weights if they exceed it. In this case, if the weight sum exceeds
       // the lowest associated-variables weight so far, terminate the search.
       hypotheticalConflicts = baseWeight + this.weightedConflicts(this.variables,
-          this.constraintsByVariable[variableIndex].associated,
-          minConflict.conflicts - baseWeight);
+          prunedAssociated, minConflict.conflicts - baseWeight);
       if (hypotheticalConflicts < minConflict.conflicts)
         minConflict = {
             "value": variable.domain[i],
@@ -254,11 +274,6 @@ class Constraint {
     // weight conveys the importance of a constraint. Constraints with high weights
     // must be solved with a higher priority than constraints with low weights.
     this.weight = weight;
-    // orderingWeight describes how often this constraint is violated.
-    // When minimizing conflicts, constraints are sorted by their
-    // orderingWeight at constant intervals so that often-broken constraints
-    // are evaluated first.
-    this.orderingWeight = 0;
   }
  
 }
@@ -293,10 +308,22 @@ class QuantityConstraint extends Constraint {
     this.type = "QuantityConstraint";
   }
   
+  // Return all variables in the slot.
+  getOverlap(variables) {
+    // Loop through all variables and add any in the slot to occupying.
+    var overlap = 0, i;
+    for (i = 0; i < variables.length; i++) {
+      if (variables[i].value === this.value) {
+          overlap++;
+      }
+    }
+    return overlap;
+  }
+  
   conflict(variables) {
     // Return true if there is a conflict; return false if there is not.
     var overlap = 0, i;
-    // Loop through once across all quantity constraints and check that none are more than max.
+    // Check that there are fewer than this.maximum variables in this.slot.
     for (i = 0; i < variables.length; i++) {
       if (variables[i].value === this.value) {
         overlap++;
@@ -376,11 +403,14 @@ function setDifferentConstraints(constraints, variables, list) {
   } 
 }
 
-function getBestSchedule(variables, constraints, iterations = 1e2, minConflictsSteps = 1e3, plateauInterval = 1e2) {
-  // For iterations random schedules, compute minimizeConflicts for minConflictsSteps steps. Every plateauInterval, check to be sure that the schedule hasn't plateaued (all changes are detrimental except doing nothing). Run minimizeConflicts for additionalSteps steps on the best schedule.
-  var bestSchedule = {"schedule": null, conflicts: 1e99}, schedule, conflicts, i;
+function getBestSchedule(variables, constraints, iterations = 1e2,
+    minConflictsSteps = 1e3, plateauInterval = 1e2) {
+  // For iterations random schedules, compute minimizeConflicts for
+  // minConflictsSteps steps. Every plateauInterval, check to be sure that the
+  // schedule hasn't plateaued (all changes are detrimental except doing nothing).
+  var bestSchedule = {"variables": null, conflicts: 1e99}, conflicts, i,
+        schedule = new CSP(variables, constraints, constraintsByVariable);
   for (i = 0; i < iterations; i++) {
-    schedule = new CSP(variables, constraints, constraintsByVariable);
     schedule.randomizeVariables();
     schedule.minimizeConflicts(minConflictsSteps, plateauInterval);
     conflicts = schedule.weightedConflicts();
@@ -390,14 +420,14 @@ function getBestSchedule(variables, constraints, iterations = 1e2, minConflictsS
     }
     if (conflicts < bestSchedule.conflicts) {
       bestSchedule = {"variables": schedule.getVariables(), "conflicts": conflicts};
-      if (conflicts < 6000) {
+      if (conflicts < 3000) {
         // Add each new best schedule to the localStorage, just in case.
-        var cleanJSON = JSON.stringify(schedule.getVariables());
+        var cleanJSON = getCleanJSON(schedule, teachers, students);
         localStorage.setItem("[" + i + "] Conflicts: " + conflicts + " (" + Math.random().toFixed(8) + ")", cleanJSON);
       }
     }
   }
-  bestSchedule = new CSP(bestSchedule.variables, constraints);
+  bestSchedule = new CSP(bestSchedule.variables, constraints, constraintsByVariable);
   return bestSchedule;
 }
 
@@ -433,6 +463,15 @@ function getCleanJSON(schedule, teachers, students) {
     });
   }
   return JSON.stringify(cleanJSON);
+}
+
+function getScheduleFromJSON(json) {
+    var s = new CSP(variables, constraints, constraintsByVariable),
+        classes = JSON.parse(json).classes;
+    classes.forEach( (c, index) => {
+        s.variables[index].value = c.value;
+    });
+    return s;
 }
 
 // There are five schooldays in a week, each with seven blocks.
