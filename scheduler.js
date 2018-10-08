@@ -30,6 +30,11 @@ class CSP {
     // computeVariableConstraints if it's not provided and is used in
     // getOptimizedVariable to narrow the constraints needed to check.
     this.constraintsByVariable = constraintsByVariable;
+    // conflictingVariables stores all conflicting variables at a given time.
+    // If a conflictingVariable is optimized but doesn't change, it is removed
+    // from the list so that it won't be called again. Whenever a variable
+    // does improve, conflictingVariables is rebuilt from the new information.
+    this.conflictingVariables = [];
   }
 
   printVariables() {
@@ -74,7 +79,7 @@ class CSP {
                   constraintsByVariable[j].associated.push(i);
           }
       }
-      // The algorithm below populates the unnoassociated list with every
+      // The algorithm below populates the unassociated list with every
       // element not in the associated list. Starting from the first
       // constraint, it only needs to check whether the next largest in the
       // associated list exists. Because the associated list is sorted from
@@ -146,8 +151,8 @@ class CSP {
   }
 
   getConflictingVariables(variables = this.variables) {
-    var conflictingVariables = [], i;
     this.markConflictingVariables();
+    var conflictingVariables = [], i;
     for (i = 0; i < variables.length; i++)
       if (variables[i].conflicts > 0)
         conflictingVariables.push(variables[i]);
@@ -213,55 +218,61 @@ class CSP {
     return minConflict;
   }
 
-  plateaued() {
-    // A plateau is when all changes are detrimental except doing nothing.
-    var weightedConflicts = this.weightedConflicts(),
-        conflictingVariables = this.getConflictingVariables(),
-        conflictVariable, minConflict, i;
-    for (i = 0; i < conflictingVariables.length; i++) {
-      conflictVariable = conflictingVariables[i];
-      minConflict = this.getOptimizedVariable(conflictVariable);
-      if (minConflict.value !== conflictVariable.value) {
-        return false; // There is a possible improvement or, at least, shift.
-      }
-    }
-    // After checking all possibilities for all variables, the schedule's improvement is stagnant.
-    return true;
-  }
-
-  minimizeConflicts(maxSteps = 1e3, plateauInterval = 1e2) {
-    // Before starting anything, compute the constraints associated
-    // with each variable so that getOptimizedVariable is more efficient.
+  minimizeConflicts(maxSteps = 1e3) {
+    // Before starting anything, compute the constraints associated with each
+    // variable so that getOptimizedVariable is more efficient, and ensure that
+    // conflicting variables have been calculated.
     if (this.constraintsByVariable.length == 0)
         this.computeVariableConstraints();
-    var conflicts = this.weightedConflicts(), conflictingVariables, conflictVariable, minConflict, i;
+    if (this.conflictingVariables.length == 0)
+        this.conflictingVariables = this.getConflictingVariables();
+    var conflicts = this.weightedConflicts(), conflictVariable, minConflict, i;
     for (i = 0; i < maxSteps; i++) {
       // If the current state has no conflicts, return the solution.
       if (conflicts === 0)
         return this.variables;
       
-      // Every plateauInterval steps, check for a plateau (all changes are detrimental except doing nothing).
-      if (i % plateauInterval === 0) {
-        if (this.plateaued()) {
-          // console.log("Plateau at " + i + "!");
-          return this.variables;
-        }
-      }
+      // If there are no more variables that can be optimized advantageously,
+      // terminate the search.
+      if (this.conflictingVariables.length == 0)
+        return this.variables;
       
       // Find a conflicting variable at random.
-      conflictingVariables = this.getConflictingVariables(this.variables);
-      conflictVariable = conflictingVariables[Math.floor(Math.random() * conflictingVariables.length)];
+      conflictVariable = this.conflictingVariables[
+          Math.floor(Math.random() * this.conflictingVariables.length)
+      ];
       
       // Find the option from the variable's domain that minimizes conflicts.
       minConflict = this.getOptimizedVariable(conflictVariable);
       
-      // Set the chosen conflicting variable's value to the minimizing one.
-      conflictVariable.value = minConflict.value;
-      // Update conflicts.
-      conflicts = minConflict.conflicts;
+      // If the optimized value equals the original value, remove the variable
+      // from this.conflictingVariables so it is not chosen in the future. If the
+      // optimized value is not the same, recalculate this.conflictingVariables,
+      // because the change likely induced new conflicts. In this way, no variables
+      // proven to be unoptimizable are chosen: deadends are left untouched.
+      if (conflictVariable.value == minConflict.value) {
+          this.conflictingVariables.splice(
+              this.conflictingVariables.indexOf(conflictVariable), 1
+          );
+      }
+      else {
+          // If the optimized value is different, set it, set conflicts,
+          // and recalculate the conflicting variables.
+          conflictVariable.value = minConflict.value;
+          conflicts = minConflict.conflicts;
+          this.conflictingVariables = this.getConflictingVariables();
+      }
+      
     }
     
     return this.variables;
+  }
+  
+  competitiveMinimizeConflicts(milestones, maxSteps = 1e3) {
+      // milestones is an array of how many conflicts are allowed i steps into
+      // minimization. If the schedule underperforms at any point, the search
+      // terminates. Milestones at a given step are usually how well the average
+      // xth percentile of schedules is at the step.
   }
  
 }
@@ -404,15 +415,14 @@ function setDifferentConstraints(constraints, variables, list) {
 }
 
 function getBestSchedule(variables, constraints, iterations = 1e2,
-    minConflictsSteps = 1e3, plateauInterval = 1e2) {
+    minConflictsSteps = 1e3) {
   // For iterations random schedules, compute minimizeConflicts for
-  // minConflictsSteps steps. Every plateauInterval, check to be sure that the
-  // schedule hasn't plateaued (all changes are detrimental except doing nothing).
+  // minConflictsSteps steps.
   var bestSchedule = {"variables": null, conflicts: 1e99}, conflicts, i,
         schedule = new CSP(variables, constraints, constraintsByVariable);
   for (i = 0; i < iterations; i++) {
     schedule.randomizeVariables();
-    schedule.minimizeConflicts(minConflictsSteps, plateauInterval);
+    schedule.minimizeConflicts(minConflictsSteps);
     conflicts = schedule.weightedConflicts();
     if (i % Math.floor(iterations/100) == 0) {
       console.log(Math.floor(i/iterations * 100) + "%");
@@ -732,21 +742,9 @@ var temp = new CSP(variables, constraints), constraintsByVariable;
 temp.computeVariableConstraints();
 constraintsByVariable = temp.constraintsByVariable;
 
-// var schedule = new CSP(variables, constraints);
-// schedule.randomizeVariables();
-// schedule.minimizeConflicts(10000, 100);
-// schedule.printVariables();
-// var iterations = 1;
-// var start = performance.now();
-// for (i = 0; i < iterations; i++) {
-//   schedule.plateaued();
-// }
-// var end = performance.now();
-// console.log("The calculation took " + (end - start)/iterations + " milliseconds.");
-
-function measureBestSchedule(iterations, steps, plateauInterval = 100) {
+function measureBestSchedule(iterations, steps) {
     var start = performance.now();
-    var bestSchedule = getBestSchedule(variables, constraints, iterations, steps, plateauInterval);
+    var bestSchedule = getBestSchedule(variables, constraints, iterations, steps);
     var end = performance.now();
     console.log("The calculation took " + (end - start)/1000 + " seconds.");
     console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts weighted at " + bestSchedule.weightedConflicts() + ".");
