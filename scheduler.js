@@ -778,23 +778,31 @@ constraintsByVariable = temp.constraintsByVariable;
 
 var milestones = [];
 function computeMilestones(interval = 10, iterations = 10, max = 1000, percentile = 0.5) {
-    var temp = new CSP(variables, constraints, constraintsByVariable);
-    milestones = temp.computeMilestones(interval, iterations, max, percentile);
+    document.getElementById("progress").textContent = "calculating milestones ...";
+    setTimeout(_ => {
+        var temp = new CSP(variables, constraints, constraintsByVariable);
+        milestones = temp.computeMilestones(interval, iterations, max, percentile);
+        document.getElementById("progress").textContent = "Done calculating milestones.";
+    }, 0);
 }
 
 function measureBestSchedule(iterations, steps) {
-    var start = performance.now();
-    var bestSchedule = getBestSchedule(iterations, steps, milestones);
-    var end = performance.now();
-    console.log("The calculation took " + (end - start)/1000 + " seconds.");
-    console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts weighted at " + bestSchedule.weightedConflicts() + ".");
-//    bestSchedule.printVariables();
-    var cleanJSON = getCleanJSON(bestSchedule, teachers, students); 
- //   console.log(cleanJSON);
-    document.getElementById("schedule-json").value = cleanJSON;
+    document.getElementById("progress").textContent = "calculating schedules ...";
+    var bestSchedule, start, end;
+    setTimeout(_ => { // Use setTimeout so the progress element has time to update.
+        start = performance.now();
+        bestSchedule = getBestSchedule(iterations, steps, milestones);
+        end = performance.now();
+        document.getElementById("progress").innerHTML = "The calculation took " +
+            Math.floor((end - start)/10)/100 + " seconds.<br>The best schedule has " +
+            bestSchedule.conflicts().length + " conflicts weighted at " +
+            bestSchedule.weightedConflicts() + ".";
+        console.log("The calculation took " + (end - start)/1000 + " seconds.");
+        console.log("The best schedule has " + bestSchedule.conflicts().length + " conflicts weighted at " + bestSchedule.weightedConflicts() + ".");
+        var cleanJSON = getCleanJSON(bestSchedule, teachers, students); 
+        document.getElementById("schedule-json").value = cleanJSON;
 
-    // var cleanJSON = getCleanJSON(bestSchedule, teachers, students);
-    // console.log(cleanJSON);
-
-    return bestSchedule;
+        // var cleanJSON = getCleanJSON(bestSchedule, teachers, students);
+        // console.log(cleanJSON);
+    }, 0);
 }
